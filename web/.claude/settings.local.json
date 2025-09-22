@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun add:*)",
+      "Bash(npx tailwindcss init:*)",
+      "Bash(bunx tailwindcss init:*)",
+      "Bash(bun run:*)",
+      "Bash(bun remove:*)",
+      "Bash(bunx:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
