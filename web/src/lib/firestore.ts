@@ -1,199 +1,376 @@
 import {
-  patientsCollection,
-  visitsCollection,
-  medicinesCollection,
-  firestoreHelpers
-} from './firebase';
-import { where, orderBy } from 'firebase/firestore';
-import type { Patient, Visit, Medicine } from '../store/clinic';
+  collection,
+  doc,
+  addDoc,
+  getDocs,
+  getDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  Timestamp,
+  writeBatch
+} from 'firebase/firestore';
+import { db } from './firebase';
+import { Patient, Medicine, Visit, PrescribedMedicine } from '@/store/clinic';
 
-// Patient operations
-export const patientService = {
-  // Get all patients
-  getAll: async (): Promise<Patient[]> => {
-    const snapshot = await firestoreHelpers.getAll(patientsCollection);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
-  },
+// Collections
+const PATIENTS_COLLECTION = 'patients';
+const MEDICINES_COLLECTION = 'medicines';
+const VISITS_COLLECTION = 'visits';
 
-  // Add new patient
-  add: async (patient: Omit<Patient, 'id'>): Promise<string> => {
-    const docRef = await firestoreHelpers.add(patientsCollection, {
-      ...patient,
-      createdAt: new Date()
-    });
-    return docRef.id;
-  },
-
-  // Get patient by ID
-  getById: async (id: string): Promise<Patient | null> => {
-    const doc = await firestoreHelpers.getById('patients', id);
-    return doc.exists() ? { id: doc.id, ...doc.data() } as Patient : null;
-  },
-
-  // Update patient
-  update: async (id: string, data: Partial<Patient>): Promise<void> => {
-    await firestoreHelpers.update('patients', id, data);
-  },
-
-  // Delete patient
-  delete: async (id: string): Promise<void> => {
-    await firestoreHelpers.delete('patients', id);
-  }
-};
-
-// Visit operations
-export const visitService = {
-  // Get all visits
-  getAll: async (): Promise<Visit[]> => {
-    const snapshot = await firestoreHelpers.getAll(visitsCollection);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Visit));
-  },
-
-  // Get visits by patient ID
-  getByPatientId: async (patientId: string): Promise<Visit[]> => {
-    const snapshot = await firestoreHelpers.query(
-      visitsCollection,
-      where('patientId', '==', patientId),
-      orderBy('date', 'desc')
-    );
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Visit));
-  },
-
-  // Add new visit
-  add: async (visit: Omit<Visit, 'id'>): Promise<string> => {
-    const docRef = await firestoreHelpers.add(visitsCollection, {
-      ...visit,
-      date: new Date()
-    });
-    return docRef.id;
-  },
-
-  // Update visit
-  update: async (id: string, data: Partial<Visit>): Promise<void> => {
-    await firestoreHelpers.update('visits', id, data);
-  },
-
-  // Delete visit
-  delete: async (id: string): Promise<void> => {
-    await firestoreHelpers.delete('visits', id);
-  }
-};
-
-// Medicine operations
-export const medicineService = {
-  // Get all medicines
-  getAll: async (): Promise<Medicine[]> => {
-    const snapshot = await firestoreHelpers.getAll(medicinesCollection);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Medicine));
-  },
-
-  // Add new medicine
-  add: async (medicine: Omit<Medicine, 'id'>): Promise<string> => {
-    const docRef = await firestoreHelpers.add(medicinesCollection, medicine);
-    return docRef.id;
-  },
-
-  // Get medicine by ID
-  getById: async (id: string): Promise<Medicine | null> => {
-    const doc = await firestoreHelpers.getById('medicines', id);
-    return doc.exists() ? { id: doc.id, ...doc.data() } as Medicine : null;
-  },
-
-  // Update medicine
-  update: async (id: string, data: Partial<Medicine>): Promise<void> => {
-    await firestoreHelpers.update('medicines', id, data);
-  },
-
-  // Delete medicine
-  delete: async (id: string): Promise<void> => {
-    await firestoreHelpers.delete('medicines', id);
-  },
-
-  // Get low stock medicines
-  getLowStock: async (): Promise<Medicine[]> => {
-    const medicines = await medicineService.getAll();
-    return medicines.filter(medicine => medicine.quantity <= medicine.lowStockThreshold);
-  }
-};
-
-// Initialize Firestore with sample data (run once)
-export const initializeFirestore = async () => {
+// Patient Services
+export const createPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>) => {
   try {
-    // Check if data already exists
-    const patients = await patientService.getAll();
-    if (patients.length > 0) {
-      console.log('Firestore already has data');
-      return;
+    const now = new Date();
+    const docRef = await addDoc(collection(db, PATIENTS_COLLECTION), {
+      ...patientData,
+      createdAt: Timestamp.fromDate(now),
+      updatedAt: Timestamp.fromDate(now)
+    });
+    return { id: docRef.id, error: null };
+  } catch (error: any) {
+    return { id: null, error: error.message };
+  }
+};
+
+export const getPatients = async () => {
+  try {
+    const q = query(collection(db, PATIENTS_COLLECTION), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    const patients: Patient[] = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt.toDate(),
+      updatedAt: doc.data().updatedAt.toDate()
+    })) as Patient[];
+    return { patients, error: null };
+  } catch (error: any) {
+    return { patients: [], error: error.message };
+  }
+};
+
+export const getPatient = async (id: string) => {
+  try {
+    const docRef = doc(db, PATIENTS_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const patient = {
+        id: docSnap.id,
+        ...docSnap.data(),
+        createdAt: docSnap.data().createdAt.toDate(),
+        updatedAt: docSnap.data().updatedAt.toDate()
+      } as Patient;
+      return { patient, error: null };
+    } else {
+      return { patient: null, error: 'Patient not found' };
+    }
+  } catch (error: any) {
+    return { patient: null, error: error.message };
+  }
+};
+
+export const updatePatient = async (id: string, updates: Partial<Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>>) => {
+  try {
+    const docRef = doc(db, PATIENTS_COLLECTION, id);
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: Timestamp.fromDate(new Date())
+    });
+    return { error: null };
+  } catch (error: any) {
+    return { error: error.message };
+  }
+};
+
+export const deletePatient = async (id: string) => {
+  try {
+    await deleteDoc(doc(db, PATIENTS_COLLECTION, id));
+    return { error: null };
+  } catch (error: any) {
+    return { error: error.message };
+  }
+};
+
+export const searchPatients = async (searchTerm: string) => {
+  try {
+    const q = query(
+      collection(db, PATIENTS_COLLECTION),
+      where('name', '>=', searchTerm),
+      where('name', '<=', searchTerm + '\uf8ff'),
+      limit(10)
+    );
+    const querySnapshot = await getDocs(q);
+    const patients: Patient[] = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt.toDate(),
+      updatedAt: doc.data().updatedAt.toDate()
+    })) as Patient[];
+    return { patients, error: null };
+  } catch (error: any) {
+    return { patients: [], error: error.message };
+  }
+};
+
+// Medicine Services
+export const createMedicine = async (medicineData: Omit<Medicine, 'id' | 'createdAt' | 'updatedAt'>) => {
+  try {
+    const now = new Date();
+    const docRef = await addDoc(collection(db, MEDICINES_COLLECTION), {
+      ...medicineData,
+      expiryDate: Timestamp.fromDate(medicineData.expiryDate),
+      createdAt: Timestamp.fromDate(now),
+      updatedAt: Timestamp.fromDate(now)
+    });
+    return { id: docRef.id, error: null };
+  } catch (error: any) {
+    return { id: null, error: error.message };
+  }
+};
+
+export const getMedicines = async () => {
+  try {
+    const q = query(collection(db, MEDICINES_COLLECTION), orderBy('name'));
+    const querySnapshot = await getDocs(q);
+    const medicines: Medicine[] = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      expiryDate: doc.data().expiryDate.toDate(),
+      createdAt: doc.data().createdAt.toDate(),
+      updatedAt: doc.data().updatedAt.toDate()
+    })) as Medicine[];
+    return { medicines, error: null };
+  } catch (error: any) {
+    return { medicines: [], error: error.message };
+  }
+};
+
+export const getMedicine = async (id: string) => {
+  try {
+    const docRef = doc(db, MEDICINES_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const medicine = {
+        id: docSnap.id,
+        ...docSnap.data(),
+        expiryDate: docSnap.data().expiryDate.toDate(),
+        createdAt: docSnap.data().createdAt.toDate(),
+        updatedAt: docSnap.data().updatedAt.toDate()
+      } as Medicine;
+      return { medicine, error: null };
+    } else {
+      return { medicine: null, error: 'Medicine not found' };
+    }
+  } catch (error: any) {
+    return { medicine: null, error: error.message };
+  }
+};
+
+export const updateMedicine = async (id: string, updates: Partial<Omit<Medicine, 'id' | 'createdAt' | 'updatedAt'>>) => {
+  try {
+    const docRef = doc(db, MEDICINES_COLLECTION, id);
+    const updateData: any = {
+      ...updates,
+      updatedAt: Timestamp.fromDate(new Date())
+    };
+
+    if (updates.expiryDate) {
+      updateData.expiryDate = Timestamp.fromDate(updates.expiryDate);
     }
 
-    console.log('Initializing Firestore with sample data...');
+    await updateDoc(docRef, updateData);
+    return { error: null };
+  } catch (error: any) {
+    return { error: error.message };
+  }
+};
 
-    // Add sample patients
-    const samplePatients = [
-      {
-        name: 'John Smith',
-        age: 35,
-        gender: 'male' as const,
-        contact: '+1-555-0123',
-        address: '123 Main St, City, State 12345',
-        notes: 'Regular checkups, no known allergies',
-      },
-      {
-        name: 'Sarah Johnson',
-        age: 28,
-        gender: 'female' as const,
-        contact: '+1-555-0456',
-        address: '456 Oak Ave, City, State 12345',
-        notes: 'Diabetic, requires regular monitoring',
-      },
-      {
-        name: 'Michael Brown',
-        age: 45,
-        gender: 'male' as const,
-        contact: '+1-555-0789',
-        address: '789 Pine Rd, City, State 12345',
-        notes: 'Hypertension patient',
+export const deleteMedicine = async (id: string) => {
+  try {
+    await deleteDoc(doc(db, MEDICINES_COLLECTION, id));
+    return { error: null };
+  } catch (error: any) {
+    return { error: error.message };
+  }
+};
+
+export const searchMedicines = async (searchTerm: string) => {
+  try {
+    const q = query(
+      collection(db, MEDICINES_COLLECTION),
+      where('name', '>=', searchTerm),
+      where('name', '<=', searchTerm + '\uf8ff'),
+      limit(10)
+    );
+    const querySnapshot = await getDocs(q);
+    const medicines: Medicine[] = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      expiryDate: doc.data().expiryDate.toDate(),
+      createdAt: doc.data().createdAt.toDate(),
+      updatedAt: doc.data().updatedAt.toDate()
+    })) as Medicine[];
+    return { medicines, error: null };
+  } catch (error: any) {
+    return { medicines: [], error: error.message };
+  }
+};
+
+export const getLowStockMedicines = async (threshold: number = 10) => {
+  try {
+    const q = query(
+      collection(db, MEDICINES_COLLECTION),
+      where('quantity', '<=', threshold),
+      orderBy('quantity')
+    );
+    const querySnapshot = await getDocs(q);
+    const medicines: Medicine[] = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      expiryDate: doc.data().expiryDate.toDate(),
+      createdAt: doc.data().createdAt.toDate(),
+      updatedAt: doc.data().updatedAt.toDate()
+    })) as Medicine[];
+    return { medicines, error: null };
+  } catch (error: any) {
+    return { medicines: [], error: error.message };
+  }
+};
+
+// Visit Services
+export const createVisit = async (visitData: Omit<Visit, 'id' | 'createdAt'>) => {
+  try {
+    const batch = writeBatch(db);
+
+    // Create visit
+    const visitRef = doc(collection(db, VISITS_COLLECTION));
+    batch.set(visitRef, {
+      ...visitData,
+      date: Timestamp.fromDate(visitData.date),
+      createdAt: Timestamp.fromDate(new Date())
+    });
+
+    // Update medicine quantities
+    for (const prescribed of visitData.prescribedMedicines) {
+      const medicineRef = doc(db, MEDICINES_COLLECTION, prescribed.medicineId);
+      const medicineSnap = await getDoc(medicineRef);
+
+      if (medicineSnap.exists()) {
+        const currentQuantity = medicineSnap.data().quantity;
+        const newQuantity = Math.max(0, currentQuantity - prescribed.quantity);
+        batch.update(medicineRef, {
+          quantity: newQuantity,
+          updatedAt: Timestamp.fromDate(new Date())
+        });
       }
-    ];
-
-    for (const patient of samplePatients) {
-      await patientService.add(patient);
     }
 
-    // Add sample medicines
-    const sampleMedicines = [
-      {
-        name: 'Paracetamol 500mg',
-        category: 'Painkiller',
-        quantity: 150,
-        unitPrice: 0.50,
-        expiryDate: new Date('2025-12-31'),
-        lowStockThreshold: 20,
-      },
-      {
-        name: 'Amoxicillin 250mg',
-        category: 'Antibiotic',
-        quantity: 8,
-        unitPrice: 2.75,
-        expiryDate: new Date('2025-06-30'),
-        lowStockThreshold: 10,
-      },
-      {
-        name: 'Metformin 500mg',
-        category: 'Diabetes',
-        quantity: 75,
-        unitPrice: 1.20,
-        expiryDate: new Date('2025-09-15'),
-        lowStockThreshold: 15,
-      }
-    ];
+    await batch.commit();
+    return { id: visitRef.id, error: null };
+  } catch (error: any) {
+    return { id: null, error: error.message };
+  }
+};
 
-    for (const medicine of sampleMedicines) {
-      await medicineService.add(medicine);
+export const getVisits = async (patientId?: string) => {
+  try {
+    let q;
+    if (patientId) {
+      q = query(
+        collection(db, VISITS_COLLECTION),
+        where('patientId', '==', patientId),
+        orderBy('date', 'desc')
+      );
+    } else {
+      q = query(collection(db, VISITS_COLLECTION), orderBy('date', 'desc'));
     }
 
-    console.log('Firestore initialized successfully');
-  } catch (error) {
-    console.error('Error initializing Firestore:', error);
+    const querySnapshot = await getDocs(q);
+    const visits: Visit[] = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      date: doc.data().date.toDate(),
+      createdAt: doc.data().createdAt.toDate()
+    })) as Visit[];
+    return { visits, error: null };
+  } catch (error: any) {
+    return { visits: [], error: error.message };
+  }
+};
+
+export const getVisit = async (id: string) => {
+  try {
+    const docRef = doc(db, VISITS_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const visit = {
+        id: docSnap.id,
+        ...docSnap.data(),
+        date: docSnap.data().date.toDate(),
+        createdAt: docSnap.data().createdAt.toDate()
+      } as Visit;
+      return { visit, error: null };
+    } else {
+      return { visit: null, error: 'Visit not found' };
+    }
+  } catch (error: any) {
+    return { visit: null, error: error.message };
+  }
+};
+
+export const getTodayStats = async () => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Get today's visits
+    const visitsQuery = query(
+      collection(db, VISITS_COLLECTION),
+      where('date', '>=', Timestamp.fromDate(today)),
+      where('date', '<', Timestamp.fromDate(tomorrow))
+    );
+    const visitsSnapshot = await getDocs(visitsQuery);
+    const todayVisits = visitsSnapshot.size;
+
+    // Get unique patients today
+    const patientIds = new Set();
+    visitsSnapshot.docs.forEach(doc => {
+      patientIds.add(doc.data().patientId);
+    });
+    const todayPatients = patientIds.size;
+
+    // Get low stock medicines
+    const lowStockResult = await getLowStockMedicines(20);
+    const lowStockCount = lowStockResult.medicines.length;
+
+    // Calculate revenue (this would be based on consultation fees and medicine prices)
+    let revenue = 0;
+    visitsSnapshot.docs.forEach(doc => {
+      const visit = doc.data();
+      revenue += 50; // Base consultation fee
+      visit.prescribedMedicines?.forEach((med: PrescribedMedicine) => {
+        revenue += med.quantity * 10; // Estimated medicine cost
+      });
+    });
+
+    return {
+      stats: {
+        patients: todayPatients,
+        visits: todayVisits,
+        revenue,
+        lowStock: lowStockCount
+      },
+      error: null
+    };
+  } catch (error: any) {
+    return {
+      stats: { patients: 0, visits: 0, revenue: 0, lowStock: 0 },
+      error: error.message
+    };
   }
 };

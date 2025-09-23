@@ -1,14 +1,5 @@
-import { signal, type Signal } from '@builder.io/qwik';
-import type { User } from 'firebase/auth';
+import { atom } from 'nanostores';
+import { User } from 'firebase/auth';
 
-export interface AuthState {
-  user: User | null;
-  loading: boolean;
-  error: string | null;
-}
-
-export const authState: Signal<AuthState> = signal<AuthState>({
-  user: null,
-  loading: true,
-  error: null,
-});
+export const $user = atom<User | null>(null);
+export const $loading = atom<boolean>(true);
